@@ -172,10 +172,14 @@ function request_wireless_client() {
     fi
 }
 
-# Debug 
-dodebug "wpa_cli args: $@"
-[ -z "$WPA_ID" ] || dodebug "wpa_cli env: WPA_ID=$WPA_ID"
-[ -z "$WPA_ID_STR" ] || dodebug "wpa_cli env: WPA_ID_STR=$WPA_ID_STR"
+# Debug
+if [ "$1" == "$if_wlan" ]; then
+    dodebug "wpa_cli args: $@"
+    [ -z "$WPA_ID" ] || dodebug "wpa_cli env: WPA_ID=$WPA_ID"
+    [ -z "$WPA_ID_STR" ] || dodebug "wpa_cli env: WPA_ID_STR=$WPA_ID_STR"
+else
+    dodebug "called args: $@"
+fi
 
 # Get command line args
 case "$1" in
