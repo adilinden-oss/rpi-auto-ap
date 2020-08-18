@@ -1,0 +1,264 @@
+#!/bin/bash
+
+# MIT License
+# 
+# Copyright (c) 2020 Adi Linden
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# This script heavily leans on the work done by others, namely:
+#
+#   - StackExchange "Automatically Create Hotspot if no Network is Available"
+#       https://raspberrypi.stackexchange.com/a/100196
+#   - StackExchange "Use systemd-networkd for general networking"
+#       https://raspberrypi.stackexchange.com/a/108593
+#   - GitHub 0unknwn/auto-hotspot
+#       https://github.com/0unknwn/auto-hotspot
+#   - GitHub gitbls/autoAP
+#       https://github.com/gitbls/autoAP
+#
+
+# The primary purpose of this script is to be run by the wpa_cli@wlan0 
+# service. There the script is called with two arguments:
+#
+#     $1 has the interface name
+#     $2 has the wpa_supplicant status
+#
+# We care about the following statuses
+#
+#     CONNECTED             Client mode connected
+#     DISCONNECTED          Client mode disconnected
+#     AP-STA-CONNECTED      Station connected to AP
+#     AP-STA-DISCONNECTED   Station disconnected from AP
+#     AP-ENABLED            AP mode entered
+#     AP-DISABLED           AP mode exited
+
+# The secondary purpose of this script is to manually interact with
+# it. 
+#
+#     --reset               Restore normal operation
+#     --start-ap            Manually bump to AP mode
+
+# Default interfaces
+if_lan="eth0"
+if_wlan="wlan0"
+
+
+# Timers to wait in AP mode before scanning the network
+timer_disconnected=30       # after last station disconnected
+timer_accesspoint=120       # after accee point mode entered
+
+# A status file to handle calls while waiting
+wait_status="/var/run/rpi-auto-ap.wait"
+
+# The `systemd-networkd` configuration file for network client mode
+network_client="/etc/systemd/network/21-${if_wlan}-client.network"
+network_ap="/etc/systemd/network/25-${if_wlan}-accesspoint.network"
+
+# Must be root!
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root"
+    echo
+    echo "    sudo $0"
+    echo
+    exit 1
+fi
+
+progname="$(basename $0)"
+
+# Simple log handler
+function dolog() {
+    logger --id "$progname: $@"
+
+    # Uncomment to debug to file
+    echo "$(tstamp) $progname: $@" >> /tmp/rpi-auto-ap.debug
+}
+
+# Simple timestamp function
+function tstamp() {
+    date +%Y-%m-%d_%H:%M:%S.%N
+}
+
+# Configure network for client mode
+function network_client() {
+    if [ -e "${network_client}~" ]; then
+        mv "${network_client}~" "${network_client}"
+        systemctl restart systemd-networkd
+    fi
+}
+
+# Configure network for access point
+function network_ap() {
+    if [ -e "${network_client}" ]; then
+        mv "${network_client}" "${network_client}~"
+        systemctl restart systemd-networkd
+    fi
+}
+
+# Configure wireless for client mode
+function wireless_client() {
+
+    # Place wireless in client mode, scanning for networks
+    wpa_cli -i $if_wlan reconfigure
+}
+
+# Configure wireless for access point mode
+function wireless_ap() {
+
+    # Place wireless in access point mode
+    wpa_cli -i $if_wlan select_network 0
+}
+
+# Request wireless client mode (after timeout)
+function request_wireless_client() {
+    local timeout=$1
+
+    # Check for stations
+    if [ "$(wpa_cli -i $if_wlan all_sta)" = "" ]; then
+
+        # Write timestamp to status file
+        status="wait ${timeout}@$(tstamp)"
+        echo "$status" > $wait_status
+
+        # Sleep for the timeout value
+        sleep $timeout
+
+        # Check status file is ours
+        if [ -e "$wait_status" ] && [ "$(head -1 $wait_status)" = "$status" ]; then
+            dolog "        $status completed executing client mode request"
+
+            # Reconfigure wireless for client mode scan
+            wireless_client
+        else
+            dolog "        $status file was cleared, abort client mode request"
+        fi
+    fi
+}
+
+# Uncomment to debug
+dolog "debug - $@"
+[ -z "$WPA_ID" ] || dolog "debug - WPA_ID=$WPA_ID"
+[ -z "$WPA_ID_STR" ] || dolog "debug - WPA_ID_STR=$WPA_ID_STR"
+
+# Get command line args
+case "$1" in
+
+    # Reset operation
+    --reset)
+        dolog "request reset"
+
+        # User requested access point mode (force access point)
+        # - remove any lock
+        # - reconfigure network
+        # - wireless to client mode
+        [ -e "$wait_status" ] && rm -f "$wait_status"
+        network_client
+        wireless_client
+        exit 0
+        ;;
+
+    # Manually bump into AP mode
+    --access-point)
+        dolog "request access point"
+
+        # User requested access point mode (temporary)
+        # - reconfigure network
+        # - wireless to access point mode
+        # - enter wait loop to revert to client mode
+        network_ap
+        wireless_ap
+        request_wireless_client $timer_accesspoint
+        exit 0
+        ;;
+
+    # Manually force AP mode until next reboot
+    --force-access-point)
+        dolog "request access point"
+
+        # User requested access point mode (forced)
+        # - remove any lock
+        # - reconfigure network
+        # - wireless to access point mode
+        # - stop the `wpa_cli` service
+        [ -e "$wait_status" ] && rm -f "$wait_status"
+        network_ap
+        wireless_ap
+        systemctl stop wpa_cli@${if_wlan}.service
+        exit 0
+        ;;
+esac
+
+# Handle wpa_cli calls
+case "$2" in
+
+    # `wpa_cli` signalled client mode connected to network
+    CONNECTED)
+        dolog "wpa_cli client mode connected"
+
+        # Wireless connected in client mode
+        # - clear status to cancel any waiting processes
+        # - reconfigure network
+        [ -e "$wait_status" ] && rm -f "$wait_status"
+        network_client
+        ;;
+
+    # `wpa_cli` signalled client mode disconnected from network
+    DISCONNECTED)
+        dolog "wpa_cli client mode disconnected"
+        ;;
+
+    # `wpa_cli` signalled station connected to access point
+    AP-STA-CONNECTED)
+        dolog "wpa_cli station connected to AP"
+
+        # Clear status file to signal any waiting processes to
+        # remain in access point mode
+        [ -e "$wait_status" ] && rm -f "$wait_status"
+        ;;
+
+    # `wpa_cli` signalled station disconnected from access point
+    AP-STA-DISCONNECTED)
+        dolog "wpa_cli station disconnected from AP"
+
+        # Wireless entered access point mode
+        # - reconfigure network
+        # - enter wait loop to revert to client mode
+        network_ap
+        request_wireless_client $timer_disconnected
+        ;;
+
+    # `wpa_cli` signalled access point mode enabled
+    AP-ENABLED)
+        dolog "wpa_cli AP mode entered"
+
+        # Wireless entered access point mode
+        # - reconfigure network
+        # - enter wait loop to revert to client mode
+        network_ap
+        request_wireless_client $timer_accesspoint
+        ;;
+
+    # `wpa_cli` signalled access point mode disabled
+    AP-DISABLED)
+        dolog "wpa_cli AP mode exited"
+        ;;
+esac
+
+exit 0
+# End
