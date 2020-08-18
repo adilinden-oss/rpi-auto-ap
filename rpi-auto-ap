@@ -64,6 +64,10 @@ if_wlan="wlan0"
 timer_disconnected=30       # after last station disconnected
 timer_accesspoint=120       # after accee point mode entered
 
+# Debug specific
+debug=1
+debug_file="/tmp/rpi-auto-ap.debug"
+
 # A status file to handle calls while waiting
 wait_status="/var/run/rpi-auto-ap.wait"
 
@@ -82,12 +86,16 @@ fi
 
 progname="$(basename $0)"
 
-# Simple log handler
+# Simple log handlers
 function dolog() {
     logger --id "$progname: $@"
 
-    # Uncomment to debug to file
-    echo "$(tstamp) $progname: $@" >> /tmp/rpi-auto-ap.debug
+    # Debug
+    [ "$debug" -eq "1" ] && echo "$(tstamp) log:   $@" >> "$debug_file"
+}
+function dodebug() {
+    # Debug
+    [ "$debug" -eq "1" ] && echo "$(tstamp) debug: $@" >> "$debug_file"
 }
 
 # Simple timestamp function
@@ -97,6 +105,9 @@ function tstamp() {
 
 # Configure network for client mode
 function network_client() {
+    # Debug
+    dodebug "config network for client"
+
     if [ -e "${network_client}~" ]; then
         mv "${network_client}~" "${network_client}"
         systemctl restart systemd-networkd
@@ -105,6 +116,9 @@ function network_client() {
 
 # Configure network for access point
 function network_ap() {
+    # Debug
+    dodebug "config network for access point"
+
     if [ -e "${network_client}" ]; then
         mv "${network_client}" "${network_client}~"
         systemctl restart systemd-networkd
@@ -113,6 +127,8 @@ function network_ap() {
 
 # Configure wireless for client mode
 function wireless_client() {
+    # Debug
+    dodebug "config wireless as client"
 
     # Place wireless in client mode, scanning for networks
     wpa_cli -i $if_wlan reconfigure
@@ -120,6 +136,8 @@ function wireless_client() {
 
 # Configure wireless for access point mode
 function wireless_ap() {
+    # Debug
+    dodebug "config wireless as access point"
 
     # Place wireless in access point mode
     wpa_cli -i $if_wlan select_network 0
@@ -128,6 +146,9 @@ function wireless_ap() {
 # Request wireless client mode (after timeout)
 function request_wireless_client() {
     local timeout=$1
+
+    # Debug
+    dodebug "request wireless client in $timeout"
 
     # Check for stations
     if [ "$(wpa_cli -i $if_wlan all_sta)" = "" ]; then
@@ -141,20 +162,20 @@ function request_wireless_client() {
 
         # Check status file is ours
         if [ -e "$wait_status" ] && [ "$(head -1 $wait_status)" = "$status" ]; then
-            dolog "        $status completed executing client mode request"
+            dolog "$status completed executing client mode request"
 
             # Reconfigure wireless for client mode scan
             wireless_client
         else
-            dolog "        $status file was cleared, abort client mode request"
+            dolog "$status file was cleared, abort client mode request"
         fi
     fi
 }
 
-# Uncomment to debug
-dolog "debug - $@"
-[ -z "$WPA_ID" ] || dolog "debug - WPA_ID=$WPA_ID"
-[ -z "$WPA_ID_STR" ] || dolog "debug - WPA_ID_STR=$WPA_ID_STR"
+# Debug 
+dodebug "wpa_cli args: $@"
+[ -z "$WPA_ID" ] || dodebug "wpa_cli env: WPA_ID=$WPA_ID"
+[ -z "$WPA_ID_STR" ] || dodebug "wpa_cli env: WPA_ID_STR=$WPA_ID_STR"
 
 # Get command line args
 case "$1" in
