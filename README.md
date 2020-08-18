@@ -28,14 +28,7 @@ ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 ap_scan=1
 
-# Wireless Client
-network={
-    priority=10
-    ssid="HomeNetwork"
-    psk="SomePassword"
-}
-
-# Access point mode
+# Access point mode - needs to be first!
 network={
     priority=0
     mode=2
@@ -44,6 +37,14 @@ network={
     ssid=RaspberryPi
     psk="raspberry"
 }
+
+# Wireless Client
+network={
+    priority=10
+    ssid="HomeNetwork"
+    psk="SomePassword"
+}
+
 ```
 
 ### 2. Step
@@ -74,6 +75,65 @@ Reboot the Raspberry Pi
 ```
 shutdown -r now
 ```
+
+## Notes
+
+Some confusion around the **CONNECTED** and **DISCONNECTED** events reported to the actions script.
+
+From the `wpa_cli` manual page:
+
+> Additionally, three environmental variables are available to
+> the file: WPA_CTRL_DIR, WPA_ID, and WPA_ID_STR. WPA_CTRL_DIR
+> contains the absolute path to the ctrl_interface socket. WPA_ID
+> contains the unique network_id identifier assigned to the active
+> network, and WPA_ID_STR contains the content of the id_str option.
+
+From `wpa_supplicant/wpa_cli.c`:
+
+```
+    if (str_starts(pos, WPA_EVENT_CONNECTED)) {
+        int new_id = -1;
+        os_unsetenv("WPA_ID");
+        os_unsetenv("WPA_ID_STR");
+        os_unsetenv("WPA_CTRL_DIR");
+
+        pos = os_strstr(pos, "[id=");
+        if (pos)
+            copy = os_strdup(pos + 4);
+
+        if (copy) {
+            pos2 = id = copy;
+            while (*pos2 && *pos2 != ' ')
+                pos2++;
+            *pos2++ = '\0';
+            new_id = atoi(id);
+            os_setenv("WPA_ID", id, 1);
+            while (*pos2 && *pos2 != '=')
+                pos2++;
+            if (*pos2 == '=')
+                pos2++;
+            id = pos2;
+            while (*pos2 && *pos2 != ']')
+                pos2++;
+            *pos2 = '\0';
+            os_setenv("WPA_ID_STR", id, 1);
+            os_free(copy);
+        }
+
+        os_setenv("WPA_CTRL_DIR", ctrl_iface_dir, 1);
+
+        if (wpa_cli_connected <= 0 || new_id != wpa_cli_last_id) {
+            wpa_cli_connected = 1;
+            wpa_cli_last_id = new_id;
+            wpa_cli_exec(action_file, ifname, "CONNECTED");
+        }
+    } else if (str_starts(pos, WPA_EVENT_DISCONNECTED)) {
+        if (wpa_cli_connected) {
+            wpa_cli_connected = 0;
+            wpa_cli_exec(action_file, ifname, "DISCONNECTED");
+        }
+```
+
 
 ## References
 
