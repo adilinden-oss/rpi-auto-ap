@@ -234,7 +234,7 @@ case "$2" in
 
     # `wpa_cli` signalled client mode connected to network
     CONNECTED)
-        dolog "wpa_cli client mode connected"
+        dolog "wpa_cli CONNECTED - client mode connected"
 
         # Wireless connected in client mode
         # - clear status to cancel any waiting processes
@@ -245,12 +245,12 @@ case "$2" in
 
     # `wpa_cli` signalled client mode disconnected from network
     DISCONNECTED)
-        dolog "wpa_cli client mode disconnected"
+        dolog "wpa_cli DISCONNECTED - client mode disconnected"
         ;;
 
     # `wpa_cli` signalled station connected to access point
     AP-STA-CONNECTED)
-        dolog "wpa_cli station connected to AP"
+        dolog "wpa_cli AP-STA-CONNECTED - station connected to AP"
 
         # Clear status file to signal any waiting processes to
         # remain in access point mode
@@ -259,7 +259,7 @@ case "$2" in
 
     # `wpa_cli` signalled station disconnected from access point
     AP-STA-DISCONNECTED)
-        dolog "wpa_cli station disconnected from AP"
+        dolog "wpa_cli AP-STA-DISCONNECTED - station disconnected from AP"
 
         # Wireless entered access point mode
         # - reconfigure network
@@ -270,7 +270,7 @@ case "$2" in
 
     # `wpa_cli` signalled access point mode enabled
     AP-ENABLED)
-        dolog "wpa_cli AP mode entered"
+        dolog "wpa_cli AP-ENABLED - access point mode entered"
 
         # Wireless entered access point mode
         # - reconfigure network
@@ -281,7 +281,7 @@ case "$2" in
 
     # `wpa_cli` signalled access point mode disabled
     AP-DISABLED)
-        dolog "wpa_cli AP mode exited"
+        dolog "wpa_cli AP-DISABLED - access point mode exited"
         ;;
 esac
 
