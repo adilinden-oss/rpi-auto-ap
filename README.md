@@ -76,9 +76,42 @@ Reboot the Raspberry Pi
 shutdown -r now
 ```
 
+## Theory of Operation
+
+### Wireless
+
+The `wpa_cli` man page perhaps describes it best:
+
+> **-a file**
+> Run in daemon mode executing the action file based on events from wpa_supplicant. The specified file will be executed with the first argument set to interface name and second to "CONNECTED" or "DISCONNECTED" depending on the event. This can be used to execute networking tools required to configure the interface.
+> Additionally, three environmental variables are available to the file: WPA_CTRL_DIR, WPA_ID, and WPA_ID_STR. WPA_CTRL_DIR contains the absolute path to the ctrl_interface socket. WPA_ID contains the unique network_id identifier assigned to the active network, and WPA_ID_STR contains the content of the id_str option.
+
+There are 6 events of interest:
+
+| CONNECTED           |  Connected |
+| DISCONNECTED        |  Disconnected |
+| AP-STA-CONNECTED    |  Station connected to AP |
+| AP-STA-DISCONNECTED |  Station disconnected from AP |
+| AP-ENABLED          |  AP mode entered |
+| AP-DISABLED         |  AP mode exited |
+
+The `wpa_supplicant` configuration contains an accesspoint mode network statement and a client (station) mode network statement. When the client is able to connect to the network, it is the preferred network due to its `priority=` value. When the client is unable to connect, the wireless enters access point mode.
+
+The **AP-ENABLED** event triggers the reconfiguration of `systemd-networkd` for access point mode by applying a static IP address to the `wlan0` interface and providing a DHCP server. The `rpi-auto-ap` script also starts a timer (2 minute default) which will revert back to client mode to scan for any available networks. 
+
+The **AP-STA-DISCONNECTED** event causes a check for connected clients, if no clients are present a timer (30 seconds default) is started. Upon timer expiry wireless will be reconfigured for client mode to scan for available networks.
+
+The **CONNECTED** event is used to detect whether wireless has connected to a network. Because **CONNECTED** also occurs for events in other modes, a secondary check to ensure wireless is in client (station) mode is required. If all checks pass, the reconfiguration of `systemd-networkd` for client mode occurs by enabling the DHCP client to obtain an IP address.
+
+A status file is used to manage overlapping wait routines.
+
+### Networking
+
+`systemd-networkd` is used to handle networking changes. Changing between appropriate settings for each mode is accomplished by installing an appropriate configuration file and restarting the `systemd-networkd` service.
+
 ## Notes
 
-Some confusion around the **CONNECTED** and **DISCONNECTED** events reported to the actions script.
+The **CONNECTED** and **DISCONNECTED** events are reported in various wireless modes, not strictly in client mode. 
 
 From the `wpa_cli` manual page:
 

@@ -42,8 +42,10 @@
 #
 # We care about the following statuses
 #
-#     CONNECTED             Client mode connected
-#     DISCONNECTED          Client mode disconnected
+#     CONNECTED             Detect client connected if combined with check
+#                           of wireless status
+#     DISCONNECTED          Detect client disconnected if combined with check
+#                           of wireless status
 #     AP-STA-CONNECTED      Station connected to AP
 #     AP-STA-DISCONNECTED   Station disconnected from AP
 #     AP-ENABLED            AP mode entered
@@ -241,7 +243,7 @@ case "$1" in
 
     # Run `request_wireless_client` as seperate process
     --request_wireless_client)
-        dolog "request --request_wireless_client"
+        dolog "request --request_wireless_client $2"
 
         # Execute the request_wireless_client function as a background
         # Requires secand argument with timeout value
