@@ -79,7 +79,7 @@ network_ap="/etc/systemd/network/25-${if_wlan}-accesspoint.network"
 if [[ $EUID -ne 0 ]]; then
     echo "This script must be run as root"
     echo
-    echo "    sudo $0"
+    echo "    sudo $0 $@"
     echo
     exit 1
 fi
@@ -106,8 +106,9 @@ function tstamp() {
 # Configure network for client mode
 function network_client() {
     # Debug
-    dodebug "config network for client"
+    dodebug "configure network for client"
 
+    # Reconfigure network
     if [ -e "${network_client}~" ]; then
         mv "${network_client}~" "${network_client}"
         systemctl restart systemd-networkd
@@ -117,8 +118,9 @@ function network_client() {
 # Configure network for access point
 function network_ap() {
     # Debug
-    dodebug "config network for access point"
+    dodebug "configure network for access point"
 
+    # Reconfigure network
     if [ -e "${network_client}" ]; then
         mv "${network_client}" "${network_client}~"
         systemctl restart systemd-networkd
@@ -128,7 +130,7 @@ function network_ap() {
 # Configure wireless for client mode
 function wireless_client() {
     # Debug
-    dodebug "config wireless as client"
+    dodebug "configure wireless as client"
 
     # Place wireless in client mode, scanning for networks
     wpa_cli -i $if_wlan reconfigure
@@ -137,7 +139,7 @@ function wireless_client() {
 # Configure wireless for access point mode
 function wireless_ap() {
     # Debug
-    dodebug "config wireless as access point"
+    dodebug "configure wireless as access point"
 
     # Place wireless in access point mode
     wpa_cli -i $if_wlan select_network 0
@@ -172,6 +174,14 @@ function request_wireless_client() {
     fi
 }
 
+# Clear status file
+function clear_status() {
+    # Debug
+    dodebug "clear wait status file"
+
+    [ -e "$wait_status" ] && rm -f "$wait_status"
+}
+
 # Debug
 if [ "$1" == "$if_wlan" ]; then
     dodebug "wpa_cli args: $@"
@@ -186,45 +196,60 @@ case "$1" in
 
     # Reset operation
     --reset)
-        dolog "request reset"
+        dolog "request --reset"
 
         # User requested access point mode (force access point)
         # - remove any lock
-        # - reconfigure network
         # - wireless to client mode
-        [ -e "$wait_status" ] && rm -f "$wait_status"
-        network_client
+        # - reconfigure network
+        clear_status
         wireless_client
+        network_client
         exit 0
         ;;
 
     # Manually bump into AP mode
     --access-point)
-        dolog "request access point"
+        dolog "request --access-point"
 
         # User requested access point mode (temporary)
-        # - reconfigure network
         # - wireless to access point mode
+        # - reconfigure network
         # - enter wait loop to revert to client mode
-        network_ap
         wireless_ap
-        request_wireless_client $timer_accesspoint
+        network_ap
+        #request_wireless_client $timer_accesspoint
+        nohup "$0" --request_wireless_client $timer_accesspoint >/dev/null 2>&1 &
         exit 0
         ;;
 
     # Manually force AP mode until next reboot
     --force-access-point)
-        dolog "request access point"
+        dolog "request --force-access-point"
 
         # User requested access point mode (forced)
         # - remove any lock
-        # - reconfigure network
         # - wireless to access point mode
+        # - reconfigure network
         # - stop the `wpa_cli` service
         [ -e "$wait_status" ] && rm -f "$wait_status"
-        network_ap
         wireless_ap
+        network_ap
         systemctl stop wpa_cli@${if_wlan}.service
+        exit 0
+        ;;
+
+    # Run `request_wireless_client` as seperate process
+    --request_wireless_client)
+        dolog "request --request_wireless_client"
+
+        # Execute the request_wireless_client function as a background
+        # Requires secand argument with timeout value
+        if [ -z "$2" ]; then
+            dolog "error: missing timeout value"
+            exit 1
+        fi
+        request_wireless_client "$2"
         exit 0
         ;;
 esac
@@ -236,16 +261,27 @@ case "$2" in
     CONNECTED)
         dolog "wpa_cli CONNECTED - client mode connected"
 
-        # Wireless connected in client mode
-        # - clear status to cancel any waiting processes
-        # - reconfigure network
-        [ -e "$wait_status" ] && rm -f "$wait_status"
-        network_client
+        # Make sure we are in client (station) mode
+        if wpa_cli -i $if_wlan status | grep -q "mode=station"; then
+
+            # Wireless connected in client mode
+            # - clear status to cancel any waiting processes
+            # - reconfigure network
+            clear_status
+            network_client
+        else
+            dodebug "wireless not in client mode"
+        fi
         ;;
 
     # `wpa_cli` signalled client mode disconnected from network
     DISCONNECTED)
         dolog "wpa_cli DISCONNECTED - client mode disconnected"
+
+        # Make sure we are in client (station) mode
+        if ! wpa_cli -i $if_wlan status | grep -q "mode=station"; then
+            dodebug "wireless not in client mode"
+        fi
         ;;
 
     # `wpa_cli` signalled station connected to access point
@@ -254,7 +290,7 @@ case "$2" in
 
         # Clear status file to signal any waiting processes to
         # remain in access point mode
-        [ -e "$wait_status" ] && rm -f "$wait_status"
+        clear_status
         ;;
 
     # `wpa_cli` signalled station disconnected from access point
