@@ -154,15 +154,15 @@ function request_wireless_client() {
     # Debug
     dodebug "request wireless client in $timeout"
 
+    # Write timestamp to status file
+    status="wait ${timeout}@$(tstamp)"
+    echo "$status" > $wait_status
+
+    # Sleep for the timeout value
+    sleep $timeout
+
     # Check for stations
     if [ "$(wpa_cli -i $if_wlan all_sta)" = "" ]; then
-
-        # Write timestamp to status file
-        status="wait ${timeout}@$(tstamp)"
-        echo "$status" > $wait_status
-
-        # Sleep for the timeout value
-        sleep $timeout
 
         # Check status file is ours
         if [ -e "$wait_status" ] && [ "$(head -1 $wait_status)" = "$status" ]; then
@@ -173,6 +173,8 @@ function request_wireless_client() {
         else
             dolog "$status file was cleared, abort client mode request"
         fi
+    else
+        dolog "station(s) connected, abort client mode request"
     fi
 }
 
