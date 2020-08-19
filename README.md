@@ -83,11 +83,14 @@ shutdown -r now
 The `wpa_cli` man page perhaps describes it best:
 
 > **-a file**
+>
 > Run in daemon mode executing the action file based on events from wpa_supplicant. The specified file will be executed with the first argument set to interface name and second to "CONNECTED" or "DISCONNECTED" depending on the event. This can be used to execute networking tools required to configure the interface.
 > Additionally, three environmental variables are available to the file: WPA_CTRL_DIR, WPA_ID, and WPA_ID_STR. WPA_CTRL_DIR contains the absolute path to the ctrl_interface socket. WPA_ID contains the unique network_id identifier assigned to the active network, and WPA_ID_STR contains the content of the id_str option.
 
 There are 6 events of interest:
 
+| `wpa_cli` Event     |     |
+| ------------------- | --- |
 | CONNECTED           |  Connected |
 | DISCONNECTED        |  Disconnected |
 | AP-STA-CONNECTED    |  Station connected to AP |
