@@ -91,11 +91,11 @@ function dolog() {
     logger --id "$progname: $@"
 
     # Debug
-    [ "$debug" -eq "1" ] && echo "$(tstamp) log:   $@" >> "$debug_file"
+    [ "$debug" -eq "1" ] && echo "$(tstamp) [$$] log:   $@" >> "$debug_file"
 }
 function dodebug() {
     # Debug
-    [ "$debug" -eq "1" ] && echo "$(tstamp) debug: $@" >> "$debug_file"
+    [ "$debug" -eq "1" ] && echo "$(tstamp) [$$] debug: $@" >> "$debug_file"
 }
 
 # Simple timestamp function
