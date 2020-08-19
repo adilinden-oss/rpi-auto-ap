@@ -262,9 +262,7 @@ case "$2" in
         dolog "wpa_cli AP-STA-DISCONNECTED - station disconnected from AP"
 
         # Wireless entered access point mode
-        # - reconfigure network
         # - enter wait loop to revert to client mode
-        network_ap
         request_wireless_client $timer_disconnected
         ;;
 
