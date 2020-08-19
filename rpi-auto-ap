@@ -67,7 +67,7 @@ timer_disconnected=30       # after last station disconnected
 timer_accesspoint=120       # after accee point mode entered
 
 # Debug specific
-debug=1
+debug=0
 debug_file="/tmp/rpi-auto-ap.debug"
 
 # A status file to handle calls while waiting
